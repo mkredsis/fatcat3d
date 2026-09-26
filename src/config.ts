@@ -2,7 +2,7 @@ export const site = {
   name: 'FATCAT-3D',
   tagline: 'De la idea al objeto: fabricamos lo que imaginas en 3D.',
   /** Número de WhatsApp con código de país, solo dígitos. EDITA AQUÍ. */
-  whatsapp: '573000000000',
+  whatsapp: '573107537360',
   whatsappMessage:
     'Hola FATCAT-3D 👋, quiero cotizar una impresión 3D.',
   instagram: 'https://instagram.com/fatcat3d',
