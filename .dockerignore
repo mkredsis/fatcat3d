@@ -2,9 +2,6 @@ node_modules
 dist
 .git
 .github
-*.md
 .vscode
 .idea
-Dockerfile
-docker-compose.yml
-nginx.conf
+*.md
