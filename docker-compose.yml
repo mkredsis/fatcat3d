@@ -1,0 +1,15 @@
+services:
+  fatcat3d-web:
+    image: fatcat3d-web:latest
+    container_name: fatcat3d-web
+    restart: unless-stopped
+    ports:
+      # Solo localhost: NPM llega por la red Docker; si no, por 127.0.0.1
+      - "127.0.0.1:3107:80"
+    networks:
+      - vps-network
+
+networks:
+  vps-network:
+    name: ubuntu_vps-network
+    external: true
