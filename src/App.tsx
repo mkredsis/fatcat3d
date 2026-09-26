@@ -8,8 +8,10 @@ import Process from './sections/Process'
 import Materials from './sections/Materials'
 import Contact from './sections/Contact'
 import Footer from './sections/Footer'
+import CookieBanner from './components/CookieBanner'
 import AdminLogin from './pages/AdminLogin'
 import AdminDashboard from './pages/AdminDashboard'
+import Privacy from './pages/Privacy'
 
 function Landing() {
   return (
@@ -25,6 +27,7 @@ function Landing() {
         <Contact />
       </main>
       <Footer />
+      <CookieBanner />
     </>
   )
 }
@@ -35,6 +38,7 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Landing />} />
+          <Route path="/privacidad" element={<Privacy />} />
           <Route path="/admin/login" element={<AdminLogin />} />
           <Route path="/admin" element={<AdminDashboard />} />
         </Routes>
