@@ -1,75 +1,69 @@
-name: Build & Deploy FATCAT-3D
-
-# ================================================================
-# Workflow AISLADO: solo construye y despliega el contenedor
-# "fatcat3d-web". No toca ningún otro contenedor, imagen o stack
-# que ya viva en el VPS.
-#
-# Requisitos en el repo (Settings > Variables > Actions):
-#   DEPLOY_DIR  -> ruta en el VPS donde vive este proyecto
-#                  ej. /opt/stacks/fatcat3d   (debe ser una carpeta
-#                  NUEVA y exclusiva, no compartida con otros stacks)
-# ================================================================
+name: Deploy FATCAT-3D
 
 on:
   push:
-    branches: [main, master]
+    branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: fatcat3d-production
+  cancel-in-progress: false
+
 jobs:
-  build-and-deploy:
-    runs-on: self-hosted
+  deploy:
+    name: Build and deploy on Oracle VPS
+    runs-on: [self-hosted, fatcat3d]
+
+    timeout-minutes: 20
+
     env:
-      IMAGE: fatcat3d-web
-      CONTAINER: fatcat3d-web
-      PORT: "3107"
+      APP_NAME: fatcat3d-web
+      PUBLIC_URL: https://fatcat3d.mkredsis.duckdns.org
+      REMOTE_BASE: /opt/stacks/fatcat3d
+
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Verificar variable DEPLOY_DIR
+      - name: Build Docker image
         run: |
-          if [ -z "${{ vars.DEPLOY_DIR }}" ]; then
-            echo "::error::Falta la variable de repo DEPLOY_DIR. Configúrala en Settings > Variables > Actions."
-            exit 1
+          set -euo pipefail
+          docker build -t "$APP_NAME:$GITHUB_SHA" .
+
+      - name: Restart production container
+        run: |
+          set -euo pipefail
+
+          BACKUP_DIR="/home/ubuntu/backups/$APP_NAME"
+          mkdir -p "$REMOTE_BASE" "$BACKUP_DIR"
+
+          if docker inspect "$APP_NAME" >/dev/null 2>&1; then
+            docker inspect "$APP_NAME" > "$BACKUP_DIR/container-before-$GITHUB_SHA.inspect.json"
           fi
 
-      - name: Construir imagen Docker (solo fatcat3d-web)
-        run: docker build -t "$IMAGE:latest" .
+          docker rm -f "$APP_NAME" >/dev/null 2>&1 || true
+          docker run -d \
+            --name "$APP_NAME" \
+            --restart unless-stopped \
+            --network ubuntu_vps-network \
+            -p 127.0.0.1:3107:80 \
+            "$APP_NAME:$GITHUB_SHA"
 
-      - name: Publicar compose file en DEPLOY_DIR
-        run: |
-          mkdir -p "${{ vars.DEPLOY_DIR }}"
-          cp docker-compose.yml "${{ vars.DEPLOY_DIR }}/docker-compose.yml"
+          sleep 3
+          docker ps --filter "name=$APP_NAME" --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}'
 
-      - name: Asegurar red externa ubuntu_vps-network (crear solo si no existe)
+      - name: Verify local app health
         run: |
-          if ! docker network inspect ubuntu_vps-network >/dev/null 2>&1; then
-            echo "La red ubuntu_vps-network no existe; creándola (no afecta contenedores existentes)..."
-            docker network create ubuntu_vps-network
-          else
-            echo "Red ubuntu_vps-network ya existe, se reutiliza."
-          fi
-
-      - name: Redesplegar SOLO fatcat3d-web (sin --force-recreate de otros servicios)
-        working-directory: ${{ vars.DEPLOY_DIR }}
-        run: |
-          docker compose up -d --no-deps --build fatcat3d-web
-
-      - name: Healthcheck del contenedor
-        run: |
-          for i in $(seq 1 12); do
-            if curl -fsS "http://127.0.0.1:${PORT}/" >/dev/null 2>&1; then
-              echo "fatcat3d-web responde en el puerto ${PORT}"
-              exit 0
+          set -euo pipefail
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3107/ >/dev/null; then
+              echo "FATCAT-3D responde OK"; exit 0
             fi
-            echo "Esperando a que el sitio responda... intento $i"
             sleep 5
           done
-          echo "::error::El contenedor no respondió en http://127.0.0.1:${PORT}"
-          docker logs --tail 50 "$CONTAINER" || true
-          exit 1
+          echo "::error::FATCAT-3D no responde tras el despliegue"; exit 1
 
-      - name: Limpieza segura (solo imágenes <none> de este build)
-        if: always()
-        run: docker image prune -f
+      - name: Verify public route through Nginx Proxy Manager
+        run: |
+          set -euo pipefail
+          curl -fsSI "$PUBLIC_URL/" | grep -E '^HTTP/|^server:|^content-type:' -i
