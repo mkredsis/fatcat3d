@@ -1,83 +1,111 @@
-# FATCAT-3D — Sitio Web
+# FATCAT-3D — Sitio Web + Panel de Administración
 
 Sitio web moderno para **FATCAT-3D**: fabricación de todo tipo de artículos con impresión 3D.
+Incluye panel de administración para gestionar la galería de impresiones (más módulos próximamente).
 
 ## Stack
 
-- **React 19 + Vite 7 + TypeScript**
-- **Tailwind CSS 4** (estilos)
-- **Three.js + React Three Fiber** (escena 3D interactiva del hero)
-- **Framer Motion** (animaciones y efectos de scroll)
-- **Lucide** (iconos)
-- Fuente del logo replicada: **Titan One** + texto de apoyo **Outfit**
+**Frontend**
+- React 19 + Vite 7 + TypeScript + React Router 7
+- Tailwind CSS 4
+- Three.js + React Three Fiber (escena 3D del hero)
+- Framer Motion (animaciones) · Lucide (iconos)
+- Fuentes: Titan One (logo) + Outfit (texto)
+
+**Backend** (`server/`)
+- Node.js 22 + Express 4
+- Base de datos: **SQLite vía `node:sqlite`** (integrada en Node, sin compilación nativa)
+- Auth: **JWT en cookie httpOnly** + bcryptjs (costo 12) + rate-limit en login
+- Imágenes: **sharp** (conversión automática a WebP, máx. 1600px)
+- Seguridad: helmet (CSP), compresión, CORS no requerido (mismo origen)
 
 ## Desarrollo local
 
 ```bash
+# Frontend (http://localhost:5173)
 npm install
-npm run dev      # http://localhost:5173
-npm run build    # build de producción en dist/
+npm run dev
+
+# Backend (http://localhost:8080)
+cd server
+npm install
+$env:PORT=8080   # o PORT=8080 en Linux/macOS
+npm run dev
 ```
 
-## Personalización rápida
+## Panel de administración (`/admin`)
 
-| Qué | Dónde |
-|---|---|
-| WhatsApp, correo, Instagram, puerto | `src/config.ts` |
-| Fotos de la galería | carpeta `src/assets/gallery/` (se cargan automáticamente) |
-| Artes del logo de la cotización | carpeta `public/brand/` (quedan listas para integrar) |
-| Colores de marca | `src/index.css` (bloque `@theme`) |
-| Textos de secciones | archivos en `src/sections/` |
+1. En el primer acceso, `/admin/login` muestra **"Crear cuenta de administrador"** (solo disponible mientras no exista ningún admin).
+2. Desde el panel puedes **subir fotos** (arrastra y suelta), ponerles título, **reordenarlas** con flechas y **eliminarlas**.
+3. Los cambios se ven al instante en la sección **Galería** de la página principal.
+4. También puedes **cambiar la contraseña** desde el mismo panel.
+
+### API REST (resumen)
+
+| Endpoint | Acceso | Descripción |
+|---|---|---|
+| `GET /api/health` | público | Healthcheck del servicio |
+| `GET /api/gallery` | público | Lista fotos de la galería |
+| `POST /api/auth/setup` | solo si no hay admin | Crea el administrador |
+| `POST /api/auth/login` | público (rate-limited) | Inicia sesión (cookie JWT) |
+| `POST /api/auth/logout` | público | Cierra sesión |
+| `GET /api/auth/me` | autenticado | Datos del admin actual |
+| `POST /api/auth/password` | autenticado | Cambiar contraseña |
+| `POST /api/gallery` | autenticado | Subir 1-10 imágenes (multer) |
+| `PUT /api/gallery/:id` | autenticado | Editar título |
+| `POST /api/gallery/reorder` | autenticado | Reordenar galería |
+| `DELETE /api/gallery/:id` | autenticado | Eliminar foto (y archivo) |
 
 ## Docker
 
 ```bash
 docker build -t fatcat3d-web .
-docker run -d --name fatcat3d-web -p 3107:80 fatcat3d-web
+docker run -d --name fatcat3d-web \
+  -p 3107:80 \
+  -v fatcat3d-data:/data \
+  fatcat3d-web
 ```
 
-El sitio queda servido por nginx en el puerto **3107** del host.
+El volumen **`fatcat3d-data`** guarda: la base SQLite, las fotos subidas y el secreto JWT (se autogenera en el primer arranque). Sobrevive a los redespliegues.
 
-## Despliegue automático (GitHub Actions → VPS)
+## Despliegue (GitHub Actions → VPS Oracle)
 
-El workflow `.github/workflows/deploy.yml` corre en tu **self-hosted runner** y es
-completamente aislado: solo construye la imagen `fatcat3d-web` y levanta el contenedor
-`fatcat3d-web`. **No toca los otros stacks/contenedores del VPS.**
+Workflow: `.github/workflows/deploy.yml` — runner self-hosted dedicado
+(`oracle-vps-free-fatcat3d`, label `fatcat3d`). Aislado: solo toca el contenedor
+`fatcat3d-web` y el volumen `fatcat3d-data`.
 
-### Configuración única (5 minutos)
-
-1. **Crea la carpeta exclusiva en el VPS** (no compartir con otros proyectos):
-   ```bash
-   mkdir -p /opt/stacks/fatcat3d
-   ```
-2. En GitHub: **Settings > Secrets and variables > Actions > Variables** → crea:
-   - `DEPLOY_DIR` = `/opt/stacks/fatcat3d`
-3. Sube el código y haz push a `main` — el workflow hace el resto.
-4. **Nginx Proxy Manager**: crea un Proxy Host:
-   - **Domain**: `fatcat3d.<tudominio>` (el dominio base que ya tengas en NPM)
-   - **Forward Hostname/IP**: `fatcat3d-web` *(el contenedor queda en la red `npm_proxy` — ver nota)*
-   - **Forward Port**: `80`
-   - Activa **Websockets Support** y el certificado SSL (Let's Encrypt).
-
-> **Nota NPM:** el compose conecta el contenedor a la red externa `npm_proxy`.
-> Si tus otros stacks usan otra red para NPM, cambia el nombre en
-> `docker-compose.yml` por el de tu red (míralo con `docker network ls`).
-> El workflow la crea solo si no existe; nunca modifica una red existente.
-> Si prefieres no usar red compartida, basta con apuntar NPM a la IP del VPS
-> y puerto `3107`.
+En cada push a `main`:
+1. `docker build` de la imagen multi-etapa (frontend + backend).
+2. Backup del `docker inspect` del contenedor actual.
+3. Recreación del contenedor en `ubuntu_vps-network` (puerto solo en `127.0.0.1:3107`).
+4. Healthcheck local y público (`https://fatcat3d.mkredsis.duckdns.org`).
 
 ## Estructura
 
 ```
-├── .github/workflows/deploy.yml  # CI/CD aislado al VPS
-├── Dockerfile                    # build multi-etapa → nginx
-├── docker-compose.yml            # servicio único, red npm_proxy
-├── nginx.conf                    # SPA fallback + cache + gzip
-├── public/brand/                 # ← pon aquí los artes del logo
-├── src/
-│   ├── components/               # Logo SVG, Scene3D, Navbar, Reveal
-│   ├── sections/                 # Hero, Servicios, Galería, Proceso,
-│   │                             # Materiales, Contacto, Footer
-│   ├── assets/gallery/           # ← fotos de trabajos (carga automática)
-│   └── config.ts                 # datos de contacto y puerto
+├── .github/workflows/deploy.yml   # CI/CD al VPS (runner propio, aislado)
+├── Dockerfile                     # build multi-etapa: frontend + backend
+├── docker-compose.yml             # referencia (el deploy usa docker run)
+├── public/brand/                  # logo oficial + recortes
+├── server/                        # BACKEND
+│   └── src/
+│       ├── index.js               # Express: seguridad, estáticos, SPA
+│       ├── db.js                  # SQLite (node:sqlite), tablas
+│       ├── auth.js                # JWT cookie + secreto persistente
+│       └── routes/
+│           ├── auth.js            # setup, login, logout, password
+│           └── gallery.js         # CRUD galería + uploads (sharp)
+├── src/                           # FRONTEND
+│   ├── pages/                     # AdminLogin, AdminDashboard
+│   ├── components/                # Logo, Scene3D, Navbar, Reveal
+│   ├── sections/                  # Hero, Servicios, Galería, etc.
+│   ├── lib/api.ts                 # cliente fetch de la API
+│   └── config.ts                  # datos de contacto
+└── src/assets/gallery/            # fotos empaquetadas (fallback si API vacía)
 ```
+
+## Producción
+
+- Sitio: <https://fatcat3d.mkredsis.duckdns.org>
+- Panel admin: <https://fatcat3d.mkredsis.duckdns.org/admin>
+- Datos persistentes: volumen Docker `fatcat3d-data` en el VPS (`/var/lib/docker/volumes/fatcat3d-data`)

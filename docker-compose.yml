@@ -3,11 +3,18 @@ services:
     image: fatcat3d-web:latest
     container_name: fatcat3d-web
     restart: unless-stopped
+    # Sin nginx.conf: node sirve frontend + API + uploads
     ports:
-      # Solo localhost: NPM llega por la red Docker; si no, por 127.0.0.1
+      # Solo localhost: NPM llega por la red Docker (ubuntu_vps-network)
       - "127.0.0.1:3107:80"
+    volumes:
+      # Persistencia: SQLite + JWT secret + fotos subidas
+      - fatcat3d-data:/data
     networks:
       - vps-network
+
+volumes:
+  fatcat3d-data:
 
 networks:
   vps-network:

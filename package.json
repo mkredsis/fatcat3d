@@ -9,14 +9,15 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@fontsource/titan-one": "^5.2.5",
     "@fontsource-variable/outfit": "^5.2.5",
+    "@fontsource/titan-one": "^5.2.5",
     "@react-three/drei": "^10.3.0",
     "@react-three/fiber": "^9.1.2",
     "framer-motion": "^12.18.1",
     "lucide-react": "^0.525.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "react-router-dom": "^7.18.4",
     "three": "^0.178.0"
   },
   "devDependencies": {
